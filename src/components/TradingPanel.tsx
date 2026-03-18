@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { EnhancedToken } from "@codex-data/sdk/dist/sdk/generated/graphql";
 import { useBalance } from "@/hooks/use-balance";
 import { useTrade } from "@/hooks/use-trade";
-import { confirmTransaction, createConnection, createKeypair, sendTransaction, signTransaction } from "@/lib/solana";
+import { confirmTransaction, sendTransaction, signTransaction } from "@/lib/solana";
+import { useWalletStore } from "@/stores/use-wallet-store";
 
 interface TradingPanelProps {
   token: EnhancedToken
@@ -17,14 +18,22 @@ export function TradingPanel({ token }: TradingPanelProps) {
   const [tradeMode, setTradeMode] = useState<"buy" | "sell">("buy");
   const [buyAmount, setBuyAmount] = useState("");
   const [sellPercentage, setSellPercentage] = useState("");
-  
+
+  const initWallet = useWalletStore((s) => s.initialize);
+  const keypair = useWalletStore((s) => s.keypair);
+  const connection = useWalletStore((s) => s.connection);
+  const publicKey = useWalletStore((s) => s.publicKey);
+  const walletReady = useWalletStore((s) => s.isReady);
+  const walletError = useWalletStore((s) => s.error);
+
+  useEffect(() => { initWallet(); }, [initWallet]);
+
   const { nativeBalance: solanaBalance, tokenBalance, tokenAtomicBalance, loading, refreshBalance } = useBalance(token.address, Number(token.decimals), 9, Number(token.networkId));
   const { createTransaction } = useTrade(token.address, tokenAtomicBalance);
 
-  const keypair = createKeypair(import.meta.env.VITE_SOLANA_PRIVATE_KEY);
-  const connection = createConnection();
-
   const handleTrade = useCallback(async () => {
+    if (!keypair || !connection) return;
+
     const toastId = toast.loading("Submitting trade request...");
     try {
       const transaction =
@@ -48,7 +57,6 @@ export function TradingPanel({ token }: TradingPanelProps) {
       }
       toast.success(`Trade successful! TX: ${signature.slice(0, 8)}...`, { id: toastId }); 
 
-      // Refresh balance after 1 second
       setTimeout(refreshBalance, 1000);
     } catch (error) {
       toast.error((error as Error).message, { id: toastId });
@@ -58,7 +66,7 @@ export function TradingPanel({ token }: TradingPanelProps) {
   const solBuyAmountPresets = [0.0001, 0.001, 0.01, 0.1];
   const percentagePresets = [25, 50, 75, 100];
 
-  if (!import.meta.env.VITE_SOLANA_PRIVATE_KEY || !import.meta.env.VITE_HELIUS_RPC_URL || !import.meta.env.VITE_JUPITER_REFERRAL_ACCOUNT) {
+  if (!walletReady) {
     return (
       <Card>
         <CardHeader>
@@ -66,7 +74,7 @@ export function TradingPanel({ token }: TradingPanelProps) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Trading requires VITE_SOLANA_PRIVATE_KEY, VITE_HELIUS_RPC_URL and VITE_JUPITER_REFERRAL_ACCOUNT to be configured in environment variables.
+            {walletError || "Initializing wallet..."}
           </p>
         </CardContent>
       </Card>
@@ -80,12 +88,12 @@ export function TradingPanel({ token }: TradingPanelProps) {
           <CardTitle>Trade {tokenSymbol || "Token"}</CardTitle>
           <button
             onClick={() => {
-              navigator.clipboard.writeText(keypair.publicKey.toBase58());
+              if (publicKey) navigator.clipboard.writeText(publicKey);
               toast.success("Wallet address copied!");
             }}
             className="text-xs text-muted-foreground font-mono hover:text-foreground transition-colors cursor-pointer"
           >
-            {keypair.publicKey.toBase58().slice(0, 4)}...{keypair.publicKey.toBase58().slice(-4)}
+            {publicKey?.slice(0, 4)}...{publicKey?.slice(-4)}
           </button>
         </div>
       </CardHeader>
