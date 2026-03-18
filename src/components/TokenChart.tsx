@@ -1,4 +1,4 @@
-import React from 'react';
+import { memo } from 'react';
 import {
   LineChart,
   Line,
@@ -8,17 +8,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // Assuming shadcn Card is installed
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-// Type for the data expected by the chart (from getBars)
-// Adjust based on actual getBars response structure
 export interface ChartDataPoint {
-  time: number; // Assuming timestamp
+  time: number;
   open?: number | null;
   high?: number | null;
   low?: number | null;
   close?: number | null;
-  // Add other fields like volume if needed
 }
 
 interface TokenChartProps {
@@ -26,7 +23,17 @@ interface TokenChartProps {
   title?: string;
 }
 
-export const TokenChart: React.FC<TokenChartProps> = ({ data, title = "Price Chart" }) => {
+const formatXAxis = (tickItem: number) => {
+  return new Date(tickItem * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const formatTooltipValue = (value: number) => {
+  return value.toFixed(4);
+};
+
+const formatYAxis = (value: number) => `$${value.toFixed(2)}`;
+
+export const TokenChart = memo(function TokenChart({ data, title = "Price Chart" }: TokenChartProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -39,16 +46,6 @@ export const TokenChart: React.FC<TokenChartProps> = ({ data, title = "Price Cha
       </Card>
     );
   }
-
-  // Format timestamp for XAxis
-  const formatXAxis = (tickItem: number) => {
-    return new Date(tickItem * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  };
-
-  // Format tooltip value
-  const formatTooltipValue = (value: number) => {
-    return value.toFixed(4); // Adjust precision as needed
-  };
 
   return (
     <Card>
@@ -80,7 +77,7 @@ export const TokenChart: React.FC<TokenChartProps> = ({ data, title = "Price Cha
               fontSize={12}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => `$${value.toFixed(2)}`}
+              tickFormatter={formatYAxis}
               domain={['auto', 'auto']}
             />
             <Tooltip
@@ -99,10 +96,9 @@ export const TokenChart: React.FC<TokenChartProps> = ({ data, title = "Price Cha
               activeDot={{ r: 8 }}
               dot={false}
             />
-            {/* Add lines for open, high, low if needed */}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
-};
+});

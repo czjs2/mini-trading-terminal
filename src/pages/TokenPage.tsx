@@ -1,11 +1,17 @@
-import { Codex } from "@codex-data/sdk";
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useState, Suspense } from "react";
 import { TokenChart, ChartDataPoint } from "@/components/TokenChart";
 import { TradingPanel } from "@/components/TradingPanel";
+import { TradeToggleButton } from "@/components/TradeToggleButton";
+import { FloatingTradePanel } from "@/components/FloatingTradePanel";
+import { InstantTradeForm } from "@/components/InstantTradeForm";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EnhancedToken, PairFilterResult, PairRankingAttribute, RankingDirection } from "@codex-data/sdk/dist/sdk/generated/graphql";
+import { getCodexClient } from "@/lib/codex";
+import { useWalletStore } from "@/stores/use-wallet-store";
+import { useBalanceStore } from "@/stores/use-balance-store";
 
 type TokenEvent = {
   id: string;
@@ -16,16 +22,26 @@ type TokenEvent = {
   uniqueId?: string;
 };
 
+interface TokenPageData {
+  details?: EnhancedToken;
+  pairs: PairFilterResult[];
+  bars: ChartDataPoint[];
+  events: TokenEvent[];
+}
+
 export default function TokenPage() {
   const { networkId, tokenId } = useParams<{ networkId: string; tokenId: string }>();
   const networkIdNum = parseInt(networkId || '', 10);
+  const initWallet = useWalletStore((s) => s.initialize);
 
-  const [details, setDetails] = useState<EnhancedToken | undefined>(undefined);
-  const [pairs, setPairs] = useState<PairFilterResult[]>([]);
-  const [bars, setBars] = useState<ChartDataPoint[]>([]);
-  const [events, setEvents] = useState<TokenEvent[]>([]);
+  useEffect(() => {
+    initWallet();
+  }, [initWallet]);
+
+  const [data, setData] = useState<TokenPageData>({ pairs: [], bars: [], events: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fetchBalance = useBalanceStore((s) => s.fetchBalance);
 
   useEffect(() => {
     if (isNaN(networkIdNum) || !tokenId) {
@@ -35,11 +51,7 @@ export default function TokenPage() {
     }
 
     const fetchData = async () => {
-      const apiKey = import.meta.env.VITE_CODEX_API_KEY;
-      if (!apiKey) {
-        console.warn("VITE_CODEX_API_KEY not set.");
-      }
-      const codexClient = new Codex(apiKey || '');
+      const codexClient = getCodexClient();
 
       const now = Math.floor(Date.now() / 1000);
       const oneDayAgo = now - 1 * 24 * 60 * 60;
@@ -63,29 +75,30 @@ export default function TokenPage() {
         const eventsResult = results[2];
         const pairsResult = results[3];
 
+        let newDetails: EnhancedToken | undefined;
         let tokenDecimals = 18;
         if (detailsResult.status === 'fulfilled') {
-          const tokenDetails = detailsResult.value.token;
-          setDetails(tokenDetails);
-          tokenDecimals = tokenDetails?.decimals ?? 18;
+          newDetails = detailsResult.value.token;
+          tokenDecimals = newDetails?.decimals ?? 18;
         }
 
+        let newBars: ChartDataPoint[] = [];
         if (barsResult.status === 'fulfilled') {
           const b = barsResult.value.getBars;
           if (b?.t && b?.c) {
-            const chartData = b.t.map((time: number, index: number) => ({
+            newBars = b.t.map((time: number, index: number) => ({
               time: time,
               open: b.o?.[index],
               high: b.h?.[index],
               low: b.l?.[index],
               close: b.c?.[index],
             }));
-            setBars(chartData);
           }
         }
 
+        let newEvents: TokenEvent[] = [];
         if (eventsResult.status === 'fulfilled' && eventsResult.value.getTokenEvents?.items) {
-          const tokenEvents = eventsResult.value.getTokenEvents.items
+          newEvents = eventsResult.value.getTokenEvents.items
             .filter(ev => ev != null)
             .map((ev, index) => {
               const swapValue = parseFloat(ev.token0SwapValueUsd || '0');
@@ -101,12 +114,21 @@ export default function TokenPage() {
                 amountUsd: calculatedAmountUsd,
               };
             });
-          setEvents(tokenEvents);
         }
 
+        let newPairs: PairFilterResult[] = [];
         if (pairsResult.status === 'fulfilled' && pairsResult.value.filterPairs?.results) {
-          setPairs(pairsResult.value.filterPairs.results.filter(pair => pair != null) as PairFilterResult[]);
+          newPairs = pairsResult.value.filterPairs.results.filter(pair => pair != null) as PairFilterResult[];
         }
+
+        setData({ details: newDetails, bars: newBars, events: newEvents, pairs: newPairs });
+
+        fetchBalance({
+          tokenAddress: tokenId,
+          tokenDecimals,
+          nativeDecimals: 9,
+          networkId: networkIdNum,
+        });
       } catch (err) {
         console.error("Error fetching token data:", err);
         setError("Failed to load token data");
@@ -135,8 +157,10 @@ export default function TokenPage() {
     );
   }
 
+  const { details, bars, events, pairs } = data;
   const tokenName = details?.name || tokenId;
   const tokenSymbol = details?.symbol ? `(${details.symbol})` : '';
+  const isSolana = networkIdNum === 1399811149;
 
   return (
     <main className="flex min-h-screen flex-col items-center p-6 md:p-12 space-y-6">
@@ -154,6 +178,12 @@ export default function TokenPage() {
           <Suspense fallback={<Card><CardHeader><CardTitle>Price Chart</CardTitle></CardHeader><CardContent><p>Loading chart...</p></CardContent></Card>}>
             <TokenChart data={bars} title={`${tokenSymbol || 'Token'} Price Chart`} />
           </Suspense>
+
+          {isSolana && (
+            <div className="flex items-center justify-end gap-2">
+              <TradeToggleButton />
+            </div>
+          )}
 
           <Card>
             <CardHeader>
@@ -192,9 +222,7 @@ export default function TokenPage() {
 
         <div className="lg:col-span-1 space-y-6">
           {details && (
-            <TradingPanel
-              token={details}
-            />
+            <TradingPanel token={details} />
           )}
 
           <Card>
@@ -244,8 +272,8 @@ export default function TokenPage() {
               {pairs ? (
                 <div className="space-y-2">
                   {pairs
-                    .map((pair) => (
-                      <div className="text-sm" key={pair.pair?.id ?? Math.random().toString(36).substring(2, 15)}>
+                    .map((pair, index) => (
+                      <div className="text-sm" key={pair.pair?.id ?? `pair-${index}`}>
                         <div className="flex justify-between items-start">
                           <strong className="text-muted-foreground">{pair.exchange?.name || 'Unknown Exchange'}</strong>
                           <span className="text-xs text-muted-foreground">
@@ -263,6 +291,14 @@ export default function TokenPage() {
           </Card>
         </div>
       </div>
+
+      {isSolana && details && (
+        <ErrorBoundary>
+          <FloatingTradePanel title={`Trade ${details.symbol || "Token"}`}>
+            <InstantTradeForm token={details} />
+          </FloatingTradePanel>
+        </ErrorBoundary>
+      )}
     </main>
   );
 }

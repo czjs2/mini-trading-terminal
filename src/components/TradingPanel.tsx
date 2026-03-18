@@ -1,38 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EnhancedToken } from "@codex-data/sdk/dist/sdk/generated/graphql";
-import { useBalance } from "@/hooks/use-balance";
 import { useTrade } from "@/hooks/use-trade";
 import { confirmTransaction, sendTransaction, signTransaction } from "@/lib/solana";
 import { useWalletStore } from "@/stores/use-wallet-store";
+import { useBalanceStore } from "@/stores/use-balance-store";
 
 interface TradingPanelProps {
-  token: EnhancedToken
+  token: EnhancedToken;
 }
 
-export function TradingPanel({ token }: TradingPanelProps) {
+export const TradingPanel = memo(function TradingPanel({ token }: TradingPanelProps) {
   const tokenSymbol = token.symbol;
   const [tradeMode, setTradeMode] = useState<"buy" | "sell">("buy");
   const [buyAmount, setBuyAmount] = useState("");
   const [sellPercentage, setSellPercentage] = useState("");
 
-  const initWallet = useWalletStore((s) => s.initialize);
   const keypair = useWalletStore((s) => s.keypair);
   const connection = useWalletStore((s) => s.connection);
   const publicKey = useWalletStore((s) => s.publicKey);
   const walletReady = useWalletStore((s) => s.isReady);
   const walletError = useWalletStore((s) => s.error);
 
-  useEffect(() => { initWallet(); }, [initWallet]);
-
-  const { nativeBalance: solanaBalance, tokenBalance, tokenAtomicBalance, loading, refreshBalance } = useBalance(token.address, Number(token.decimals), 9, Number(token.networkId));
+  const solanaBalance = useBalanceStore((s) => s.nativeBalance);
+  const tokenBalance = useBalanceStore((s) => s.tokenBalance);
+  const tokenAtomicBalance = useBalanceStore((s) => s.tokenAtomicBalance);
+  const loading = useBalanceStore((s) => s.loading);
+  const refreshBalance = useBalanceStore((s) => s.refreshBalance);
   const { createTransaction } = useTrade(token.address, tokenAtomicBalance);
+  const [executing, setExecuting] = useState(false);
+  const executingRef = useRef(false);
 
   const handleTrade = useCallback(async () => {
-    if (!keypair || !connection) return;
+    if (!keypair || !connection || executingRef.current) return;
+    executingRef.current = true;
+    setExecuting(true);
 
     const toastId = toast.loading("Submitting trade request...");
     try {
@@ -53,13 +58,16 @@ export function TradingPanel({ token }: TradingPanelProps) {
       const confirmation = await confirmTransaction(signature, connection);
 
       if (confirmation.value.err) {
-        throw new Error("Trade failed");
+        throw new Error("Transaction failed on-chain");
       }
       toast.success(`Trade successful! TX: ${signature.slice(0, 8)}...`, { id: toastId }); 
 
       setTimeout(refreshBalance, 1000);
     } catch (error) {
       toast.error((error as Error).message, { id: toastId });
+    } finally {
+      executingRef.current = false;
+      setExecuting(false);
     }
   }, [tradeMode, buyAmount, sellPercentage, createTransaction, keypair, connection, refreshBalance]);
 
@@ -204,7 +212,7 @@ export function TradingPanel({ token }: TradingPanelProps) {
 
         <button
           onClick={handleTrade}
-          disabled={loading ||
+          disabled={loading || executing ||
             (tradeMode === "buy" && (!buyAmount || parseFloat(buyAmount) <= 0)) ||
             (tradeMode === "sell" && (!sellPercentage || parseFloat(sellPercentage) <= 0))
           }
@@ -221,4 +229,4 @@ export function TradingPanel({ token }: TradingPanelProps) {
       </CardContent>
     </Card>
   );
-}
+});

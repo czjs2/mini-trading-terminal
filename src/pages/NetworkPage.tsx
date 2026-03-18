@@ -68,14 +68,14 @@ export default function NetworkPage() {
         } else {
           setFetchError("An unknown error occurred while loading page data.");
         }
-        if (!networkName) setNetworkName(`Network ${networkId}`);
+        setNetworkName((prev) => prev ?? `Network ${networkId}`);
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [networkIdNum, networkId, networkName]);
+  }, [networkIdNum, networkId]);
 
   if (loading) {
     return (
