@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { createKeypair } from "@/lib/solana";
 import { getCodexClient } from "@/lib/codex";
 import Decimal from "decimal.js";
 import { Codex } from "@codex-data/sdk";
+import { useWalletStore } from "@/stores/use-wallet-store";
 
 export const useBalance = (tokenAddress: string, tokenDecimals: number, nativeDecimals: number, networkId: number) => {
   const [nativeBalance, setNativeBalance] = useState<number>(0);
@@ -10,7 +10,9 @@ export const useBalance = (tokenAddress: string, tokenDecimals: number, nativeDe
   const [tokenBalance, setTokenBalance] = useState<number>(0);
   const [tokenAtomicBalance, setTokenAtomicBalance] = useState<Decimal>(new Decimal(0));
   const [loading, setLoading] = useState<boolean>(true);
-  const [ codexClient, setCodexClient ] = useState<Codex | null>(null);
+  const [codexClient, setCodexClient] = useState<Codex | null>(null);
+
+  const walletPublicKey = useWalletStore((s) => s.publicKey);
 
   useEffect(() => {
     const sdk = getCodexClient();
@@ -19,18 +21,16 @@ export const useBalance = (tokenAddress: string, tokenDecimals: number, nativeDe
 
   const refreshBalance = useCallback(async () => {
     try {
-      if (!codexClient) {
+      if (!codexClient || !walletPublicKey) {
         return;
       }
 
-      const keypair = createKeypair(import.meta.env.VITE_SOLANA_PRIVATE_KEY);
-      const walletAddress = keypair.publicKey.toBase58();
       setLoading(true);
 
       const balanceResponse = await codexClient?.queries.balances({
         input: {
           networks: [networkId],
-          walletAddress: walletAddress,
+          walletAddress: walletPublicKey,
           includeNative: true,
         },
       });
@@ -69,7 +69,7 @@ export const useBalance = (tokenAddress: string, tokenDecimals: number, nativeDe
       console.error("Error fetching balances:", error);
       setLoading(false);
     }
-  }, [tokenAddress, networkId, codexClient, nativeDecimals, tokenDecimals]);
+  }, [tokenAddress, networkId, codexClient, walletPublicKey, nativeDecimals, tokenDecimals]);
 
   useEffect(() => {
     refreshBalance();

@@ -63,8 +63,11 @@ export default function TokenPage() {
         const eventsResult = results[2];
         const pairsResult = results[3];
 
+        let tokenDecimals = 18;
         if (detailsResult.status === 'fulfilled') {
-          setDetails(detailsResult.value.token);
+          const tokenDetails = detailsResult.value.token;
+          setDetails(tokenDetails);
+          tokenDecimals = tokenDetails?.decimals ?? 18;
         }
 
         if (barsResult.status === 'fulfilled') {
@@ -85,10 +88,9 @@ export default function TokenPage() {
           const tokenEvents = eventsResult.value.getTokenEvents.items
             .filter(ev => ev != null)
             .map((ev, index) => {
-              const decimals = details?.decimals ?? 18;
               const swapValue = parseFloat(ev.token0SwapValueUsd || '0');
               const amount0 = parseFloat(ev.data?.amount0 || '0');
-              const calculatedAmountUsd = swapValue * Math.abs(amount0 / (10 ** decimals));
+              const calculatedAmountUsd = swapValue * Math.abs(amount0 / (10 ** tokenDecimals));
 
               return {
                 id: ev.id,
@@ -114,7 +116,7 @@ export default function TokenPage() {
     };
 
     fetchData();
-  }, [networkIdNum, tokenId, details?.decimals]);
+  }, [networkIdNum, tokenId]);
 
   if (loading) {
     return (
