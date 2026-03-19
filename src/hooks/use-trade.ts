@@ -2,54 +2,48 @@ import { useCallback } from "react";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { NATIVE_MINT } from "@solana/spl-token";
 import Decimal from "decimal.js";
-import Jupiter from "@/lib/jupiter";
 import { bn } from "@/lib/utils";
-import { VersionedTransaction } from "@solana/web3.js";
+import { SWAP_PROVIDER } from "@/lib/swap-provider";
+import { getSwapProvider } from "@/lib/swap-providers";
+import { useWalletStore } from "@/stores/use-wallet-store";
+
+const provider = getSwapProvider(SWAP_PROVIDER);
 
 export const useTrade = (
   tokenAddress: string,
   tokenAtomicBalance: Decimal,
 ) => {
+  const connection = useWalletStore((s) => s.connection);
+
   const createTransaction = useCallback(
-    async (params: { direction: "buy" | "sell", value: number, signer: PublicKey }) => {
+    async (params: {
+      direction: "buy" | "sell";
+      value: number;
+      signer: PublicKey;
+    }) => {
+      if (!connection) throw new Error("Connection not ready");
+
       const { direction, value, signer } = params;
 
-      let atomicAmount;
-      if (direction === "buy") {
-        atomicAmount = new Decimal(value).mul(LAMPORTS_PER_SOL);
-      } else {
-        atomicAmount = tokenAtomicBalance.mul(value).div(100);
-      }
+      const atomicAmount =
+        direction === "buy"
+          ? new Decimal(value).mul(LAMPORTS_PER_SOL)
+          : tokenAtomicBalance.mul(value).div(100);
 
-      // Get order from Jupiter
-      const data = await Jupiter.getOrder({
+      const result = await provider.createTransaction({
         inputMint:
           direction === "buy" ? NATIVE_MINT : new PublicKey(tokenAddress),
         outputMint:
           direction === "buy" ? new PublicKey(tokenAddress) : NATIVE_MINT,
         amount: bn(atomicAmount),
         signer,
+        connection,
       });
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      if (data.transaction === null) {
-        throw new Error("Invalid data from Jupiter.getOrder");
-      }
-
-      // Parse the transaction from base64
-      const transactionBuffer = Buffer.from(data.transaction, "base64");
-      const transaction = VersionedTransaction.deserialize(transactionBuffer);
-
-
-      return transaction;
+      return result.transaction;
     },
-    [tokenAddress, tokenAtomicBalance],
+    [tokenAddress, tokenAtomicBalance, connection],
   );
-  
-  return {
-    createTransaction,
-  };
+
+  return { createTransaction };
 };

@@ -6,6 +6,7 @@ import { useTrade } from "@/hooks/use-trade";
 import { useWalletStore } from "@/stores/use-wallet-store";
 import { useBalanceStore } from "@/stores/use-balance-store";
 import { signTransaction, sendTransaction, confirmTransaction } from "@/lib/solana";
+import { SWAP_PROVIDER, SWAP_PROVIDER_LABELS } from "@/lib/swap-provider";
 
 interface InstantTradeFormProps {
   token: EnhancedToken;
@@ -88,16 +89,21 @@ export const InstantTradeForm = memo(function InstantTradeForm({
 
   return (
     <div className="space-y-4">
-      {/* Wallet address */}
-      <button
-        onClick={() => {
-          if (publicKey) navigator.clipboard.writeText(publicKey);
-          toast.success("Address copied!");
-        }}
-        className="text-xs text-muted-foreground font-mono hover:text-foreground transition-colors block ml-auto"
-      >
-        {publicKey?.slice(0, 4)}...{publicKey?.slice(-4)}
-      </button>
+      {/* Header: provider label + wallet address */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground font-medium px-1.5 py-0.5 bg-muted/40 rounded">
+          {SWAP_PROVIDER_LABELS[SWAP_PROVIDER]}
+        </span>
+        <button
+          onClick={() => {
+            if (publicKey) navigator.clipboard.writeText(publicKey);
+            toast.success("Address copied!");
+          }}
+          className="text-xs text-muted-foreground font-mono hover:text-foreground transition-colors"
+        >
+          {publicKey?.slice(0, 4)}...{publicKey?.slice(-4)}
+        </button>
+      </div>
 
       {/* ── Buy Section ── */}
       <div className="space-y-2">
